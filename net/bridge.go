@@ -439,13 +439,8 @@ func configureIPTables(config *BridgeConfig) error {
 		// Steer traffic via the NPC
 		_ = ipt.NewChain("filter", "WEAVE-NPC") // ignore error because it might already exist
 		// If WEAVE-NPC chain doesn't exist then next line will fail
-		if err = ipt.AppendUnique("filter", "FORWARD", "-o", config.WeaveBridgeName, "-j", "WEAVE-NPC"); err != nil {
-			return err
-		}
-		if err = ipt.AppendUnique("filter", "FORWARD", "-o", config.WeaveBridgeName, "-m", "state", "--state", "NEW", "-j", "NFLOG", "--nflog-group", "86"); err != nil {
-			return err
-		}
-		if err = ipt.AppendUnique("filter", "FORWARD", "-o", config.WeaveBridgeName, "-j", "DROP"); err != nil {
+		// Use insert rather than append to try to get ahead of any ACCEPT rules which would defeat our policies
+		if err = insertUnique(ipt, "filter", "FORWARD", 1, "-o", config.WeaveBridgeName, "-j", "WEAVE-NPC"); err != nil {
 			return err
 		}
 	} else {
@@ -478,6 +473,20 @@ func configureIPTables(config *BridgeConfig) error {
 		return errors.Wrap(err, "clearing WEAVE chain")
 	}
 	return ipt.AppendUnique("nat", "POSTROUTING", "-j", "WEAVE")
+}
+
+// insertUnique acts like Insert except that it won't add a duplicate
+func insertUnique(ipt *iptables.IPTables, table, chain string, pos int, rulespec ...string) error {
+	exists, err := ipt.Exists(table, chain, rulespec...)
+	if err != nil {
+		return err
+	}
+
+	if !exists {
+		return ipt.Insert(table, chain, pos, rulespec...)
+	}
+
+	return nil
 }
 
 func linkSetUpByName(linkName string) error {

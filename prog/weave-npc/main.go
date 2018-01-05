@@ -114,8 +114,17 @@ func createBaseRules(ipt *iptables.IPTables, ips ipset.Interface) error {
 	if err := ips.Create(npc.LocalIpset, ipset.HashIP); err != nil {
 		return err
 	}
-	return ipt.Append(npc.TableFilter, npc.MainChain,
-		"-m", "set", "!", "--match-set", npc.LocalIpset, "dst", "-j", "ACCEPT")
+	if err := ipt.Append(npc.TableFilter, npc.MainChain,
+		"-m", "set", "!", "--match-set", npc.LocalIpset, "dst", "-j", "ACCEPT"); err != nil {
+		return err
+	}
+
+	// If nothing above accepts, log new connections and drop all packets
+	if err := ipt.Append(npc.TableFilter, npc.MainChain,
+		"-m", "state", "--state", "NEW", "-j", "NFLOG", "--nflog-group", "86"); err != nil {
+		return err
+	}
+	return ipt.Append(npc.TableFilter, npc.MainChain, "-j", "DROP")
 }
 
 func root(cmd *cobra.Command, args []string) {
